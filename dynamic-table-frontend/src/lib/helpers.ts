@@ -4,12 +4,18 @@ export function detectColumnTypes(
 ): Record<string, string> {
   const types: Record<string, string> = {}
 
+  const isLikelyTimestamp = (value: string): boolean => {
+    // Accept formats like 2024-06-01 or 2024-06-01T12:34:56Z
+    return /^\d{4}-\d{2}-\d{2}(T[\d:.Z+-]*)?$/.test(value)
+  }
+
   headers.forEach((header, i) => {
     const columnValues = rows
       .map((row) => row[i])
       .filter(Boolean)
       .slice(0, 10)
 
+    const uniqueValues = new Set(columnValues.map((v) => v.trim()))
     const typeCounts = {
       integer: 0,
       float: 0,
@@ -21,35 +27,35 @@ export function detectColumnTypes(
     columnValues.forEach((value) => {
       const trimmed = value.trim()
 
-      // Integer
       if (/^-?\d+$/.test(trimmed)) {
         typeCounts.integer++
-      }
-      // Float (but not integer)
-      else if (/^-?\d*\.\d+$/.test(trimmed)) {
+      } else if (/^-?\d*\.\d+$/.test(trimmed)) {
         typeCounts.float++
-      }
-      // Boolean
-      else if (trimmed === "true" || trimmed === "false") {
-        typeCounts.boolean++
-      }
-      // Date (if not a plain number)
-      else if (
-        !/^[-+]?\d+(\.\d+)?$/.test(trimmed) &&
-        !isNaN(Date.parse(trimmed))
+      } else if (
+        trimmed.toLowerCase() === "true" ||
+        trimmed.toLowerCase() === "false"
       ) {
+        typeCounts.boolean++
+      } else if (isLikelyTimestamp(trimmed)) {
         typeCounts.timestamp++
-      }
-      // Default to text
-      else {
+      } else {
         typeCounts.text++
       }
     })
 
-    const mostLikely = Object.entries(typeCounts).sort(
-      (a, b) => b[1] - a[1]
-    )[0][0]
-    types[header] = mostLikely
+    // Fallback: if only one unique string, mark as text to avoid timestamp misclassification
+    if (typeCounts.timestamp > 0 && typeCounts.text > 0) {
+      typeCounts.timestamp = 0 // prefer text if both detected
+    }
+
+    if (uniqueValues.size === 1 && typeCounts.text > 0) {
+      types[header] = "text"
+    } else {
+      const mostLikely = Object.entries(typeCounts).sort(
+        (a, b) => b[1] - a[1]
+      )[0][0]
+      types[header] = mostLikely
+    }
   })
 
   return types

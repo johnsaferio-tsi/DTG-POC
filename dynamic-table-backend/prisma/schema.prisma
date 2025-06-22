@@ -28,3 +28,13 @@ model SchemaLog {
   executedQuery String
   timestamp     DateTime @default(now())
 }
+
+model Notification {
+  id              Int      @id @default(autoincrement())
+  message         String
+  tableName       String
+  notificationKey String   @unique
+  status          String   @default("PENDING") // PENDING | CREATED
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}

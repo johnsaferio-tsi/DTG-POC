@@ -103,6 +103,7 @@ export function generateAlterTableSQL(
   return [...addStatements, ...removeStatements].join("\n")
 }
 
+// Not in use
 export function generateInsertSQL(
   tableName: string,
   fields: Record<string, FieldDefinition>,
@@ -142,4 +143,71 @@ export function generateInsertSQL(
   }
 
   return query + ";"
+}
+
+export function generateUpsertSQL(
+  tableName: string,
+  fields: Record<string, FieldDefinition>,
+  rows: string[][]
+): string {
+  const columnNames = Object.keys(fields)
+  const columnList = columnNames.map((col) => `"${col}"`).join(", ")
+
+  const valuesList = rows
+    .map((row) => {
+      const rowValues = row.map((val, i) => {
+        const type = fields[columnNames[i]].type
+
+        if (val === null || val === undefined || val === "") return "NULL"
+
+        // Handle quoting based on type
+        switch (type) {
+          case "TEXT":
+          case "DATE":
+          case "TIMESTAMP":
+            return `'${val.replace(/'/g, "''")}'`
+
+          case "BOOLEAN":
+            return val.toLowerCase() === "true" ? "TRUE" : "FALSE"
+
+          case "JSONB":
+            try {
+              JSON.parse(val) // Validate JSON
+              return `'${val.replace(/'/g, "''")}'`
+            } catch {
+              return "NULL"
+            }
+
+          case "TEXT[]":
+            return `'${val.replace(/'/g, "''")}'` // expects Postgres array string, e.g. '{a,b,c}'
+
+          default: // INTEGER, FLOAT
+            return isNaN(Number(val)) ? "NULL" : val
+        }
+      })
+      return `(${rowValues.join(", ")})`
+    })
+    .join(",\n")
+
+  const primaryKeys = Object.entries(fields)
+    .filter(([_, def]) => def.isPrimary)
+    .map(([key]) => `"${key}"`)
+
+  if (primaryKeys.length === 0) {
+    throw new Error(
+      "At least one primary key is required for upsert operation."
+    )
+  }
+
+  const updateClause = columnNames
+    .filter((col) => !primaryKeys.includes(`"${col}"`))
+    .map((col) => `"${col}" = EXCLUDED."${col}"`)
+    .join(", ")
+
+  return `
+    INSERT INTO "${tableName}" (${columnList})
+    VALUES ${valuesList}
+    ON CONFLICT (${primaryKeys.join(", ")})
+    DO UPDATE SET ${updateClause};
+  `
 }

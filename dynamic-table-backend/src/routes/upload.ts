@@ -9,19 +9,20 @@ interface UploadCsvRequestBody {
   csvName: string
   fields: Record<string, FieldDefinition>
   rows: string[][]
+  isFirstBatch: boolean
 }
 
 router.post(
   "/upload-csv",
   async (req: Request<{}, {}, UploadCsvRequestBody>, res: Response) => {
     try {
-      const { csvName, fields, rows } = req.body
+      const { csvName, fields, rows, isFirstBatch } = req.body
 
       if (!csvName || typeof fields !== "object" || !Array.isArray(rows)) {
         return res.status(400).json({ error: "Invalid payload structure" })
       }
 
-      await syncDynamicTable(csvName, fields, rows)
+      await syncDynamicTable(csvName, fields, rows, isFirstBatch)
 
       console.log(`Table '${csvName}' synced successfully.`)
       return res

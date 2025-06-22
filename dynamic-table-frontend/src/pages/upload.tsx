@@ -2,6 +2,7 @@ import { useCallback, useState } from "react"
 import { useDropzone } from "react-dropzone"
 import Toastify from "toastify-js"
 import "toastify-js/src/toastify.css"
+import Sidebar from "../Components/Sidebar"
 
 const POSTGRES_TYPES = ["text", "integer", "float", "boolean", "timestamp"]
 
@@ -15,6 +16,7 @@ interface FileSchema {
   csvName: string
   fields: Field[]
   rows: string[][]
+  isFirstBatch?: boolean
 }
 
 export default function UploadPage() {
@@ -90,6 +92,7 @@ export default function UploadPage() {
   const handleGenerateTable = () => {
     fileSchemas.forEach((schema) => {
       const primaryKeys = schema.fields.filter((f) => f.isPrimaryKey)
+
       if (!schema.csvName.trim()) {
         Toastify({
           text: `Table name is required.`,
@@ -97,6 +100,7 @@ export default function UploadPage() {
         }).showToast()
         return
       }
+
       if (!primaryKeys.length) {
         Toastify({
           text: `Select a primary key for table '${schema.csvName}'`,
@@ -105,7 +109,7 @@ export default function UploadPage() {
         return
       }
 
-      const requestBody = {
+      const requestBody: any = {
         csvName: schema.csvName,
         fields: schema.fields.reduce((acc, field) => {
           acc[field.name] = {
@@ -115,9 +119,17 @@ export default function UploadPage() {
           return acc
         }, {} as Record<string, { type: string; isPrimary?: boolean }>),
         rows: schema.rows,
+        isFirstBatch: true,
       }
 
-      fetch("http://localhost:3002/api/upload-csv", {
+      const isLarge = schema.rows.length > 50
+      const targetUrl = isLarge
+        ? "http://localhost:3003/api/queue/table-queue"
+        : "http://localhost:3002/api/upload-csv"
+
+      console.log(`targetUrl======>`, targetUrl)
+
+      fetch(targetUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -125,10 +137,13 @@ export default function UploadPage() {
         .then((res) => res.json())
         .then((res) => {
           Toastify({
-            text: `Table '${schema.csvName}' created successfully!`,
-            backgroundColor: "#28a745",
+            text: isLarge
+              ? `Since the file is larger, '${schema.csvName}' is being processed via queue. We’ll notify you once the processing is completed.`
+              : `Table '${schema.csvName}' created successfully!`,
+            backgroundColor: isLarge ? "#17a2b8" : "#28a745",
           }).showToast()
-          setFileSchemas([]) // Clear state after success
+
+          setFileSchemas([])
         })
         .catch((err) => {
           Toastify({
@@ -141,12 +156,17 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-md-10">
-          <div className="card shadow-lg border-0">
-            <div className="card-body text-center p-5">
-              <h3 className="mb-4 fw-bold text-primary">Upload CSV Files</h3>
+    <div className="container-fluid">
+      <div className="row">
+        <div className="col-md-3 col-lg-2 p-0 bg-light min-vh-100">
+          <Sidebar />
+        </div>
+        <div className="col-md-9 col-lg-10 py-5">
+          <div className="card shadow border-0">
+            <div className="card-body p-4">
+              <h3 className="mb-4 fw-bold text-primary text-center">
+                Upload CSV Files
+              </h3>
 
               <div
                 {...getRootProps()}
@@ -157,7 +177,7 @@ export default function UploadPage() {
                 }`}
                 style={{ borderStyle: "dashed", cursor: "pointer" }}>
                 <input {...getInputProps()} />
-                <p className="text-muted mb-0">
+                <p className="text-muted mb-0 text-center">
                   <strong>Drag & drop CSV files here</strong> or click to select
                   files
                 </p>
